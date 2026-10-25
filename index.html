@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>FPV 드론 레이서</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:system-ui,sans-serif;color:#fff;touch-action:none;user-select:none;-webkit-user-select:none}
+canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
+#hud{position:fixed;top:0;left:0;right:0;padding:calc(env(safe-area-inset-top,0px) + 6px) 12px 0;display:flex;justify-content:space-between;font:600 14px/1.35 monospace;pointer-events:none;text-shadow:0 0 4px #000,0 0 2px #000}
+#hud .r{text-align:right}
+#big{font-size:26px}
+#msg{position:fixed;top:30%;left:0;right:0;text-align:center;font:700 28px sans-serif;text-shadow:0 0 6px #000;pointer-events:none;opacity:0;transition:opacity .3s}
+#arrow{position:fixed;left:50%;top:50%;width:0;height:0;pointer-events:none;display:none}
+#arrow i{position:absolute;left:-14px;top:-90px;border:14px solid transparent;border-bottom:26px solid #0f6;filter:drop-shadow(0 0 3px #000)}
+#dot{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:#fff6;pointer-events:none}
+.z{position:fixed;top:64px;bottom:0;width:50%}
+#zl{left:0}#zr{right:0}
+.ring,.knob{position:fixed;display:none;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none}
+.ring{width:120px;height:120px;border:2px solid #fff6}
+.knob{width:50px;height:50px;background:#fff7}
+#top{position:fixed;right:10px;top:calc(env(safe-area-inset-top,0px) + 74px);display:flex;gap:6px;z-index:5;flex-wrap:wrap;justify-content:flex-end;max-width:90vw}
+button{font:600 15px sans-serif;padding:10px 16px;border:0;border-radius:8px;background:#fff;color:#111}
+#top button{padding:6px 10px;font-size:13px;opacity:.75}
+#ov{position:fixed;inset:0;background:#000b;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:20px;z-index:10}
+#ov h1{margin:0;font-size:26px}
+#ov p{margin:0;max-width:420px;line-height:1.6;font-size:14px;white-space:pre-line}
+#ov div{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+#tut{position:fixed;left:8px;width:min(440px,calc(100% - 16px));top:calc(env(safe-area-inset-top,0px) + 118px);background:#000b;border-radius:10px;padding:8px 12px;font-size:13px;line-height:1.45;pointer-events:none;z-index:4;white-space:pre-line}
+@media (orientation:portrait){#tut{top:calc(env(safe-area-inset-top,0px) + 156px)}}
+#tt{display:block;color:#0f6;margin-bottom:3px}
+#tbw{height:5px;background:#fff3;border-radius:3px;margin-top:6px}#tb{height:100%;width:0;background:#0f6;border-radius:3px}
+.hint{position:fixed;bottom:9%;font:700 14px sans-serif;color:#0f6;text-shadow:0 0 4px #000;animation:bl 1s infinite alternate;display:none;pointer-events:none}
+#hl{left:8%}#hr{right:8%}
+@keyframes bl{from{opacity:.3}to{opacity:1}}
+</style>
+</head>
+<body>
+<div id="hud">
+  <div><div id="big">0:00.00</div><div id="h1"></div></div>
+  <div class="r"><div id="h2"></div><div id="h3"></div></div>
+</div>
+<div id="msg"></div><div id="dot"></div>
+<div id="arrow"><i></i></div>
+<div id="tut" style="display:none"><b id="tt"></b><span id="td"></span><div id="tbw"><div id="tb"></div></div></div>
+<div class="hint" id="hl">◀ 왼쪽 스틱</div><div class="hint" id="hr">오른쪽 스틱 ▶</div>
+<div class="z" id="zl"></div><div class="z" id="zr"></div>
+<div class="ring" id="rl"></div><div class="knob" id="kl"></div>
+<div class="ring" id="rr"></div><div class="knob" id="kr"></div>
+<div id="top"><button id="bMode">모드: 앵글</button><button id="bRe">↺ 재시작</button><button id="bNew">🎲 새 코스</button><button id="bTut">🎓 연습</button><button id="bSkip" style="display:none">⏭ 다음</button></div>
+<div id="ov">
+  <h1 id="ot">FPV 드론 레이서</h1>
+  <p id="ob">왼쪽 스틱: 위아래 = 스로틀(놓으면 호버링), 좌우 = 요(회전)
+오른쪽 스틱: 위 = 전진, 아래 = 후진, 좌우 = 기울기
+초록색 게이트를 순서대로 통과! 3랩 완주 기록을 겨뤄보세요.
+처음이라면 🎓 연습 모드부터 해보세요.
+아크로 모드: 스틱이 회전 속도를 직접 제어 (뒤집기 가능, 상단 버튼으로 전환)
+(PC: W/S/A/D = 왼쪽 스틱, 방향키 = 오른쪽 스틱)</p>
+  <div><button id="b1">시작</button><button id="b2">새 랜덤 코스</button><button id="b3">🎓 연습 모드</button></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $=id=>document.getElementById(id), V=(x,y,z)=>new THREE.Vector3(x,y,z);
+const G=9.81, LAPS=3, clamp=(v,a=-1,b=1)=>Math.max(a,Math.min(b,v));
+function mulberry(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const fmt=t=>{const m=Math.floor(t/60);return m+':'+(t-m*60).toFixed(2).padStart(5,'0')};
+
+// ---------- 씬 ----------
+const renderer=new THREE.WebGLRenderer({antialias:false});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+document.body.prepend(renderer.domElement);
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x8ec5ff);
+scene.fog=new THREE.Fog(0x8ec5ff,150,450);
+scene.add(new THREE.HemisphereLight(0xffffff,0x556655,0.9));
+const sun=new THREE.DirectionalLight(0xffffff,0.8);sun.position.set(50,100,30);scene.add(sun);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(1200,1200),new THREE.MeshLambertMaterial({color:0x5a8a4a}));
+ground.rotation.x=-Math.PI/2;scene.add(ground);
+scene.add(new THREE.GridHelper(1200,120,0x3d6b30,0x3d6b30));
+const rig=new THREE.Object3D();rig.rotation.order='YXZ';scene.add(rig);
+const camera=new THREE.PerspectiveCamera(80,1,0.1,1000);
+camera.rotation.x=0.45; // FPV 업틸트
+rig.add(camera);
+function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h);camera.aspect=w/h;camera.fov=w/h<1?100:80;camera.updateProjectionMatrix()}
+addEventListener('resize',resize);resize();
+
+// ---------- 코스 생성 ----------
+let course,gates=[],boxes=[],seed,startPos,startYaw;
+function segDist(p,a,b){const abx=b.x-a.x,abz=b.z-a.z,t=clamp(((p.x-a.x)*abx+(p.z-a.z)*abz)/(abx*abx+abz*abz),0,1);return Math.hypot(p.x-a.x-abx*t,p.z-a.z-abz*t)}
+function build(s){
+  seed=s;const rng=mulberry(s);
+  if(course)scene.remove(course);
+  course=new THREE.Group();scene.add(course);gates=[];boxes=[];
+  const n=7+Math.floor(rng()*4),rot=rng()*6.28;
+  for(let i=0;i<n;i++){const a=rot+i/n*Math.PI*2+(rng()-.5)*.3,r=60+rng()*60;gates.push({p:V(Math.cos(a)*r,3+rng()*12,Math.sin(a)*r)})}
+  gates.forEach((g,i)=>{
+    const pr=gates[(i+n-1)%n].p,nx=gates[(i+1)%n].p;
+    g.n=nx.clone().sub(pr);g.n.y=0;g.n.normalize();
+    g.r=V(-g.n.z,0,g.n.x);
+    g.mat=new THREE.MeshBasicMaterial({color:0xff8800});
+    const grp=new THREE.Group(),bar=(w,h,x,y)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,.4),g.mat);m.position.set(x,y,0);grp.add(m)};
+    bar(6.8,.4,0,3);bar(6.8,.4,0,-3);bar(.4,6.8,3,0);bar(.4,6.8,-3,0);
+    const bc=new THREE.Mesh(new THREE.BoxGeometry(.3,60,.3),g.mat);bc.position.y=33;grp.add(bc);
+    grp.position.copy(g.p);grp.lookAt(g.p.clone().add(g.n));course.add(grp);
+  });
+  const g0=gates[0];
+  startPos=g0.p.clone().addScaledVector(g0.n,-14);startPos.y=1.5;
+  startYaw=Math.atan2(-g0.n.x,-g0.n.z);
+  let placed=0,tries=0;
+  while(placed<40&&tries++<500){
+    const w=6+rng()*9,d=6+rng()*9,h=8+rng()*28,p=V((rng()-.5)*380,0,(rng()-.5)*380),m=Math.max(w,d)/2+12;
+    if(Math.hypot(p.x-startPos.x,p.z-startPos.z)<m+8)continue;
+    let ok=true;
+    for(let i=0;i<n&&ok;i++){if(segDist(p,gates[i].p,gates[(i+1)%n].p)<m||Math.hypot(p.x-gates[i].p.x,p.z-gates[i].p.z)<m)ok=false}
+    if(!ok)continue;
+    const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshLambertMaterial({color:new THREE.Color().setHSL(rng(),.12,.45+rng()*.2)}));
+    mesh.position.set(p.x,h/2,p.z);course.add(mesh);
+    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry),new THREE.LineBasicMaterial({color:0x222222})));
+    boxes.push({x0:p.x-w/2-.5,x1:p.x+w/2+.5,z0:p.z-d/2-.5,z1:p.z+d/2+.5,h:h+.5});placed++;
+  }
+}
+
+// ---------- 상태 ----------
+const st={pos:V(0,0,0),vel:V(0,0,0),yaw:0,pitch:0,roll:0};
+let acro=false,next,started,tNow,lapStart,times,crashT,finished,running=false,best=Infinity;
+function paintGates(){gates.forEach((g,i)=>g.mat.color.set(i===next?0x00ff66:0xff8800))}
+function spawn(pos,yaw){st.pos.copy(pos);st.vel.set(0,0,0);st.yaw=yaw;st.pitch=st.roll=0;rig.rotation.set(0,yaw,0)}
+function reset(){
+  next=0;started=false;tNow=0;lapStart=0;times=[];crashT=0;finished=false;
+  spawn(startPos,startYaw);paintGates();
+  try{best=parseFloat(localStorage.getItem('fpvBest'+seed+(acro?'A':'')))||Infinity}catch(e){best=Infinity}
+}
+function flash(t,c='#fff'){const m=$('msg');m.textContent=t;m.style.color=c;m.style.opacity=1;clearTimeout(flash.t);flash.t=setTimeout(()=>m.style.opacity=0,1400)}
+function crash(){if(crashT>0)return;crashT=.9;if(started)lapStart-=3;flash(tutOn?'💥 충돌! 과제를 다시 시작해요':'💥 충돌! +3초','#f55')}
+function respawn(){
+  if(tutOn){spawn(tutS.sp,tutS.sy);initLesson();return}
+  if(!started){spawn(startPos,startYaw);return}
+  const g=gates[(next+gates.length-1)%gates.length];
+  spawn(g.p.clone().addScaledVector(g.n,3),Math.atan2(-g.n.x,-g.n.z));st.pos.y=Math.max(st.pos.y,1.5);
+}
+function passGate(){
+  if(next===0){
+    if(!started){started=true;lapStart=tNow;flash('START!','#0f6')}
+    else{
+      const lt=tNow-lapStart;times.push(lt);lapStart=tNow;
+      const nb=lt<best;if(nb){best=lt;try{localStorage.setItem('fpvBest'+seed+(acro?'A':''),lt)}catch(e){}}
+      if(times.length>=LAPS){finish();return}
+      flash('LAP '+times.length+'  '+fmt(lt)+(nb?'  🏆 BEST':''),'#ff0');
+    }
+  }
+  next=(next+1)%gates.length;paintGates();
+}
+function finish(){
+  finished=true;running=false;
+  const tot=times.reduce((a,b)=>a+b,0);
+  $('ot').textContent='🏁 완주!';
+  $('ob').textContent='총 시간 '+fmt(tot)+'\n'+times.map((t,i)=>'LAP '+(i+1)+'  '+fmt(t)).join('\n')+'\n베스트 랩 '+fmt(best)+'  (코스 #'+seed+')';
+  $('b1').textContent='같은 코스 다시';$('ov').style.display='flex';
+}
+
+// ---------- 입력 ----------
+const stick={l:{x:0,y:0},r:{x:0,y:0}},keys={};
+addEventListener('keydown',e=>keys[e.code]=1);addEventListener('keyup',e=>keys[e.code]=0);
+function place(el,x,y){el.style.left=x+'px';el.style.top=y+'px'}
+function bindStick(zone,ring,knob,s){
+  let id=null,ox,oy;const R=60;
+  zone.addEventListener('pointerdown',e=>{if(id!==null)return;id=e.pointerId;zone.setPointerCapture(id);ox=e.clientX;oy=e.clientY;ring.style.display=knob.style.display='block';place(ring,ox,oy);place(knob,ox,oy);s.x=s.y=0;e.preventDefault()});
+  zone.addEventListener('pointermove',e=>{if(e.pointerId!==id)return;let dx=e.clientX-ox,dy=e.clientY-oy;const l=Math.hypot(dx,dy);if(l>R){dx*=R/l;dy*=R/l}s.x=dx/R;s.y=-dy/R;place(knob,ox+dx,oy+dy)});
+  const end=e=>{if(e.pointerId!==id)return;id=null;s.x=s.y=0;ring.style.display=knob.style.display='none'};
+  zone.addEventListener('pointerup',end);zone.addEventListener('pointercancel',end);
+}
+bindStick($('zl'),$('rl'),$('kl'),stick.l);bindStick($('zr'),$('rr'),$('kr'),stick.r);
+const ex=v=>{v=clamp(v);return Math.abs(v)<.06?0:v*(.5+.5*Math.abs(v))};
+const kx=(a,b)=>(keys[a]?1:0)-(keys[b]?1:0);
+function ctrl(){return{
+  thr:ex(stick.l.y+kx('KeyW','KeyS')),yaw:ex(stick.l.x+kx('KeyD','KeyA')),
+  pitch:ex(stick.r.y+kx('ArrowUp','ArrowDown')),roll:ex(stick.r.x+kx('ArrowRight','ArrowLeft'))}}
+
+// ---------- 물리 ----------
+const prev=V(0,0,0),up=V(0,1,0),acc=V(0,0,0);
+function step(dt){
+  tNow+=dt;
+  if(crashT>0){crashT-=dt;if(crashT<=0)respawn();return}
+  const c=ctrl();let T;
+  if(acro){ // 아크로: 스틱 = 각속도, 기체 자세는 자유 회전
+    rig.rotateX(-c.pitch*5*dt);rig.rotateZ(-c.roll*5*dt);rig.rotateY(-c.yaw*3.5*dt);
+    rig.updateMatrixWorld();
+    up.set(0,1,0).applyQuaternion(rig.quaternion);
+    T=Math.max(0,G*(1+(c.thr>0?c.thr*2:c.thr)));
+  }else{ // 앵글: 스틱 = 기울기 각도, 자동 수평
+    const k=Math.min(1,dt*9),mt=.87;
+    st.yaw-=c.yaw*dt*2.4;
+    st.pitch+=(-c.pitch*mt-st.pitch)*k;st.roll+=(-c.roll*mt-st.roll)*k;
+    rig.rotation.set(st.pitch,st.yaw,st.roll);rig.updateMatrixWorld();
+    up.set(0,1,0).applyQuaternion(rig.quaternion);
+    T=Math.max(0,G*(1+c.thr*1.1)/Math.max(up.y,.55));
+  }
+  acc.copy(up).multiplyScalar(T);acc.y-=G;acc.addScaledVector(st.vel,-.5);
+  prev.copy(st.pos);
+  st.vel.addScaledVector(acc,dt);st.pos.addScaledVector(st.vel,dt);
+  const p=st.pos;
+  if(p.y<.3){if(st.vel.y<-9||st.vel.length()>28){crash();return}p.y=.3;if(st.vel.y<0)st.vel.y=0;st.vel.x*=.97;st.vel.z*=.97}
+  if(Math.hypot(p.x,p.z)>420||p.y>150){crash();return}
+  for(const b of boxes)if(p.x>b.x0&&p.x<b.x1&&p.z>b.z0&&p.z<b.z1&&p.y<b.h){crash();return}
+  if(tutOn){tutStep(dt,c);return}
+  const g=gates[next],a=prev.clone().sub(g.p).dot(g.n),d=p.clone().sub(g.p).dot(g.n);
+  if(a<0&&d>=0){
+    const q=prev.clone().lerp(p,a/(a-d)).sub(g.p);
+    if(Math.abs(q.dot(g.r))<2.9&&Math.abs(q.y)<2.9)passGate();
+  }
+}
+
+// ---------- HUD ----------
+const tmp=V(0,0,0),fw=V(0,0,0);
+function hud(){
+  let tg;
+  if(tutOn){
+    const L=LS[li];
+    $('big').textContent='연습 '+Math.min(li+1,LS.length)+'/'+LS.length;
+    $('h1').textContent=L?L.t:'';
+    $('h3').textContent=acro?'아크로 모드':'앵글 모드';
+    tg=tutS.gate?tutS.gate.p:null;
+  }else{
+    const lt=started?tNow-lapStart:0;
+    $('big').textContent=fmt(lt);
+    $('h1').textContent='LAP '+Math.min(times.length+1,LAPS)+'/'+LAPS+'  GATE '+(next+1)+'/'+gates.length;
+    $('h3').textContent=(best<Infinity?'BEST '+fmt(best):'BEST --')+'  #'+seed;
+    tg=gates[next].p;
+  }
+  $('h2').textContent=Math.round(st.vel.length()*3.6)+' km/h  '+st.pos.y.toFixed(0)+' m';
+  const ar=$('arrow');
+  if(!tg){ar.style.display='none';return}
+  camera.updateMatrixWorld();
+  tmp.copy(tg).applyMatrix4(camera.matrixWorldInverse);
+  const nd=tmp.clone().applyMatrix4(camera.projectionMatrix);
+  if(tmp.z<0&&Math.abs(nd.x)<.9&&Math.abs(nd.y)<.9){ar.style.display='none'}
+  else{ar.style.display='block';ar.style.transform='rotate('+Math.atan2(tmp.x,tmp.y)+'rad)'}
+}
+
+// ---------- 연습 모드 ----------
+let tutOn=false,li=0,LS=[],tutS={};
+const tv=V(0,0,0);
+function tutGate(p,n){
+  const mat=new THREE.MeshBasicMaterial({color:0x00ff66}),grp=new THREE.Group();
+  const bar=(w,h,x,y)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,.4),mat);m.position.set(x,y,0);grp.add(m)};
+  bar(6.8,.4,0,3);bar(6.8,.4,0,-3);bar(.4,6.8,3,0);bar(.4,6.8,-3,0);
+  const bc=new THREE.Mesh(new THREE.BoxGeometry(.3,60,.3),mat);bc.position.y=33;grp.add(bc);
+  grp.position.copy(p);grp.lookAt(p.clone().add(n));course.add(grp);return grp;
+}
+function lessons(){const A=acro;return[
+{t:'① 스로틀 – 이륙',use:'L',
+ d:'왼쪽 스틱을 위로 밀어 높이 10m까지 올라가세요.\n[키보드 W]',
+ tip:'스로틀은 중앙(호버링 지점)에서 조금씩 가감하는 거예요. 크게 밀면 오버슈트해서 고도를 잃거나 장애물에 박아요.',
+ p:()=>(st.pos.y-1.5)/8.5},
+{t:'② 호버링 – 제자리 비행',use:'LR',
+ d:'높이 4m 이상에서 거의 멈춘 채 3초간 떠 있으세요.\n스틱을 놓으면 중앙으로 돌아와요. 가볍게 보정!\n[W/S 높이, 방향키 수평]',
+ tip:'스틱을 꽉 쥐면 떨림이 커져요. 엄지로 살살 — 흔들리면 놓았다가 다시 잡는 게 호버링의 기본이에요.',
+ p:dt=>{const S=tutS;S.hold=(st.pos.y>4&&st.vel.length()<2.5&&up.y>.9)?S.hold+dt:0;return S.hold/3}},
+{t:'③ 전진',use:'R',
+ d:A?'오른쪽 스틱을 위로 살짝 눌렀다 놓으세요. 기체가 숙인 채 계속 날아가요. 30m 전진! 멈출 땐 반대로 눌러 수평으로.\n[키보드 ↑ / ↓]':'오른쪽 스틱을 위로 밀어 30m 전진하세요. 놓으면 자동으로 수평이 돼요.\n[키보드 ↑]',
+ tip:A?'아크로는 스틱을 놓아도 그 각도로 계속 날아요. 숙일 만큼만 숙이고 놓으세요. 전진하면 고도가 떨어지니 스로틀을 살짝 올려 주세요.':'멈추려면 스틱을 놓는 것보다 반대로 살짝 눌러 브레이크를 걸면 빨라요. 기울기가 클수록 빠르지만 제동거리도 길어져요.',
+ p:()=>tv.subVectors(st.pos,tutS.p0).dot(tutS.f)/30},
+{t:'④ 후진',use:'R',
+ d:'오른쪽 스틱을 아래로 당겨 뒤로 20m 이동하세요.\n[키보드 ↓]',
+ tip:'뒤는 카메라에 안 보여요. 후진 전에 뒤쪽 공간과 높이를 먼저 확인하세요. 모르는 곳에서는 높이가 보험이에요.',
+ p:()=>-tv.subVectors(st.pos,tutS.p0).dot(tutS.f)/20},
+{t:'⑤ 요 – 좌회전',use:'L',
+ d:'왼쪽 스틱을 왼쪽으로 밀어 제자리에서 90° 왼쪽으로 도세요.\n[키보드 A]',
+ tip:'요는 시선을 돌리는 조작이에요. 레이싱 코너에서는 요 단독이 아니라 롤과 함께 쓸 때 부드럽고 빨라요.',
+ p:()=>tutS.h/(Math.PI/2)},
+{t:'⑥ 요 – 우회전',use:'L',
+ d:'이번엔 왼쪽 스틱을 오른쪽으로 밀어 90° 오른쪽으로 도세요.\n[키보드 D]',
+ tip:'양쪽 모두 연습하세요. 약한 쪽 코너에서 사고가 납니다.',
+ p:()=>-tutS.h/(Math.PI/2)},
+A?{t:'⑦ 자세 복구 (리커버리)',use:'R',
+ d:'오른쪽 스틱으로 기체를 60° 이상 기울인 뒤, 반대로 눌러 완전히 수평으로 되돌리세요.\n[키보드 방향키]',
+ tip:'아크로에서 길을 잃으면 ① 스로틀 중앙 ② 스틱을 크게 휘두르지 말고 수평 쪽으로 ③ 고도가 낮으면 스로틀부터. 당황할수록 스틱이 커져요.',
+ p:()=>{const S=tutS;if(S.stage===0&&up.y<.5)S.stage=1;if(S.stage===1&&up.y>.97)S.stage=2;return S.stage===2?1:S.stage===1?.5+.5*clamp((up.y-.5)/.47):.5*clamp((1-up.y)/.5)}}
+:{t:'⑦ 좌우 이동 (슬라이드)',use:'R',
+ d:'오른쪽 스틱을 왼쪽/오른쪽으로 기울여 옆으로 20m 이동하세요.\n[키보드 ← / →]',
+ tip:'좁은 게이트에서 살짝 어긋났을 때 요 없이 옆으로 미끄러져 라인을 맞추는 기술이에요. 시선은 항상 가고 싶은 쪽!',
+ p:()=>{const S=tutS;tv.subVectors(st.pos,S.p0);return Math.abs(-tv.x*S.f.z+tv.z*S.f.x)/20}},
+{t:'⑧ 좌회전 코너링',use:'LR',minV:6,
+ d:A?'속도(6m/s↑)를 낸 채 왼쪽으로 180° 선회하세요.\n① 오른쪽 스틱 ↑ 가속 ② ←로 기울여 뱅크(롤) ③ 기울인 채 ↓로 당겨 선회 ④ 왼쪽 스틱 ←(요)로 보조\n[키보드 ↑, ←, ↓, A]':'속도(6m/s↑)를 낸 채 왼쪽으로 180° 선회하세요.\n① 오른쪽 스틱 ↑ 가속 ② 왼쪽 스틱 ←(요)로 방향 전환 ③ 오른쪽 스틱 ←를 같이 주면 안쪽으로 기울어 더 부드러워요\n[키보드 ↑, A, ←]',
+ tip:'코너는 "느리게 들어가서 빠르게 나온다(slow in, fast out)". 입구에서 감속, 출구에서 가속해야 다음 직선이 빨라요. 시선은 코너 출구!',
+ p:()=>tutS.h/Math.PI},
+{t:'⑨ 게이트 통과',use:'LR',
+ setup:S=>{const p=S.p0.clone().addScaledVector(S.f,35);p.y=clamp(S.p0.y,5,12);const n=S.f.clone();S.gate={p,n,r:V(-n.z,0,n.x)};S.gate.mesh=tutGate(p,n);S.passed=false},
+ d:'앞에 나타난 초록 게이트의 틀 안쪽을 통과하세요. 화면에 화살표가 뜨면 그 방향으로!\n빗나가면 다시 나와요.',
+ tip:'게이트 중앙을 "보고" 날아가세요. 눈이 가는 곳으로 기체가 가요. 라인이 틀어졌으면 억지로 맞추지 말고 돌아서 다시 진입하는 게 오히려 빨라요.',
+ p:()=>{const S=tutS,g=S.gate,a=tv.copy(prev).sub(g.p).dot(g.n),d=tv.copy(st.pos).sub(g.p).dot(g.n);
+  if(a<0&&d>=0){tv.copy(prev).lerp(st.pos,a/(a-d)).sub(g.p);if(Math.abs(tv.dot(g.r))<2.9&&Math.abs(tv.y)<2.9)S.passed=true}
+  if(!S.passed&&d>10){flash('빗나갔어요! 다시 도전','#f55');initLesson();return 0}
+  return S.passed?1:0}},
+...(A?[
+{t:'⑩ 롤 플립',use:'R',
+ d:'높이 5m 이상에서 오른쪽 스틱을 ←(또는 →)로 끝까지 눌러 한 바퀴(360°) 굴러보세요!\n한 바퀴가 끝나기 직전에 스틱을 놓아 회전을 멈추세요.\n[키보드 ← 또는 →]',
+ tip:'플립 전에 고도를 충분히(5m+) 확보하세요. 회전 중엔 추력이 옆/아래를 향해요. 끝나면 스로틀을 살짝 올려 고도를 회복!',
+ p:()=>Math.abs(tutS.r)/(Math.PI*2*.92)},
+{t:'⑪ 피치 플립 (루프)',use:'R',
+ d:'속도를 낸 뒤 오른쪽 스틱을 ↓(또는 ↑)로 길게 눌러 앞뒤로 한 바퀴(360°) 돌아보세요.\n루프 정점에서 스로틀을 낮추면 안정적이에요.\n[키보드 ↑ 또는 ↓]',
+ tip:'스플릿-S(반 바퀴 뒤집어 내려오기)와 파워루프는 장애물 위를 넘는 기본기예요. 항상 아래 고도를 먼저 확인하세요!',
+ p:()=>Math.abs(tutS.pt)/(Math.PI*2*.92)}]:[])
+]}
+function initLesson(){
+  const S=tutS,L=LS[li];
+  fw.set(0,0,-1).applyQuaternion(rig.quaternion);fw.y=0;
+  if(fw.lengthSq()<.01)fw.set(0,0,-1);fw.normalize();
+  S.f=fw.clone();S.lh=Math.atan2(-fw.x,-fw.z);S.sy=S.lh;
+  S.p0=st.pos.clone();S.sp=st.pos.clone();
+  S.h=0;S.r=0;S.pt=0;S.hold=0;S.stage=0;S.done=false;S.wait=0;S.minV=L.minV||0;
+  if(S.gate){course.remove(S.gate.mesh);S.gate=null}
+  if(L.setup)L.setup(S);
+  $('tt').textContent=L.t;$('td').textContent=L.d;$('td').style.color='#fff';$('tb').style.width='0';
+  $('hl').style.display=L.use.includes('L')?'block':'none';$('hr').style.display=L.use.includes('R')?'block':'none';
+}
+function nextLesson(){li++;if(li>=LS.length)finishTut();else initLesson()}
+function restartLesson(){spawn(tutS.sp,tutS.sy);initLesson()}
+function endTutUI(){$('tut').style.display='none';$('hl').style.display=$('hr').style.display=$('bSkip').style.display='none'}
+function finishTut(){
+  running=false;if(tutS.gate){course.remove(tutS.gate.mesh);tutS.gate=null}
+  endTutUI();
+  $('ot').textContent='🎓 연습 완료!';
+  $('ob').textContent='핵심 요약\n• 스로틀은 중앙에서 조금씩\n• 코너는 slow in, fast out — 시선은 출구\n• 길을 잃으면 스로틀 중앙 + 수평 복귀\n이제 실전 코스에서 랩타임에 도전하세요!';
+  $('b1').textContent='실전 시작';$('ov').style.display='flex';
+}
+function startTut(){
+  tutOn=true;running=true;li=0;LS=lessons();
+  if(course)scene.remove(course);
+  course=new THREE.Group();scene.add(course);gates=[];boxes=[];
+  for(let i=0;i<24;i++){ // 방향 파악용 기둥
+    const a=i/24*6.283,r=140+(i%2)*50,h=12+(i%3)*12,x=Math.cos(a)*r,z=Math.sin(a)*r;
+    const m=new THREE.Mesh(new THREE.BoxGeometry(3,h,3),new THREE.MeshLambertMaterial({color:new THREE.Color().setHSL(i/24,.6,.5)}));
+    m.position.set(x,h/2,z);course.add(m);boxes.push({x0:x-2,x1:x+2,z0:z-2,z1:z+2,h:h+.5});
+  }
+  next=0;started=false;tNow=0;lapStart=0;times=[];crashT=0;finished=false;best=Infinity;
+  spawn(V(0,1.5,0),0);tutS={};
+  $('ov').style.display='none';$('tut').style.display='block';$('bSkip').style.display='';
+  initLesson();
+}
+function tutStep(dt,c){
+  const S=tutS,L=LS[li];
+  fw.set(0,0,-1).applyQuaternion(rig.quaternion);
+  if(fw.x*fw.x+fw.z*fw.z>.09){const h=Math.atan2(-fw.x,-fw.z);let d=h-S.lh;d=Math.atan2(Math.sin(d),Math.cos(d));S.lh=h;if(st.vel.length()>=S.minV)S.h+=d}
+  if(acro){S.r+=c.roll*5*dt;S.pt+=c.pitch*5*dt}
+  if(S.done){S.wait-=dt;if(S.wait<=0)nextLesson();return}
+  const pr=clamp(L.p(dt,c),0,1);
+  $('tb').style.width=(pr*100)+'%';
+  if(pr>=1&&!S.done){S.done=true;S.wait=4.5;flash('✔ 성공!','#0f6');$('td').textContent='💡 '+L.tip;$('td').style.color='#ff0'}
+}
+
+// ---------- 루프 ----------
+let last=performance.now();
+function loop(now){
+  requestAnimationFrame(loop);
+  const dt=Math.min(.033,(now-last)/1000);last=now;
+  if(running)step(dt);
+  rig.position.copy(st.pos);
+  hud();renderer.render(scene,camera);
+}
+function newSeed(){const s=1+Math.floor(Math.random()*99999);try{history.replaceState(null,'','#'+s)}catch(e){}return s}
+function begin(s,rebuild){if(tutOn){tutOn=false;rebuild=true;endTutUI()}if(rebuild)build(s);reset();$('ov').style.display='none';running=true}
+$('b1').onclick=()=>begin(seed,false);
+$('b2').onclick=()=>begin(newSeed(),true);
+$('bRe').onclick=()=>tutOn?restartLesson():begin(seed,false);
+$('b3').onclick=$('bTut').onclick=startTut;
+$('bSkip').onclick=()=>{if(tutOn&&running)nextLesson()};
+function applyMode(){$('bMode').textContent='모드: '+(acro?'아크로':'앵글');camera.rotation.x=acro?.6:.45}
+$('bMode').onclick=()=>{acro=!acro;try{localStorage.setItem('fpvAcro',acro?'1':'0')}catch(e){}applyMode();tutOn?startTut():begin(seed,false)};
+$('bNew').onclick=()=>begin(newSeed(),true);
+const h=parseInt(location.hash.slice(1));
+try{acro=localStorage.getItem('fpvAcro')==='1'}catch(e){}
+applyMode();build(h>0?h:newSeed());reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
